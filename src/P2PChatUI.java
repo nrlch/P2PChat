@@ -112,5 +112,76 @@ public class P2PChatUI {
             appendSystem("Removed peer: " + sel);
         }
     }
-    
+
+    // ---------------- Network / Send ----------------
+    private void sendMessage() {
+        String msg = messageField.getText().trim();
+        if (msg.isEmpty()) return;
+        String composed = "[" + host + ":" + port + "] " + msg;
+        broadcast(composed);
+        chatArea.append("You: " + msg + "\n");
+        messageField.setText("");
+    }
+
+    private void broadcast(String msg) {
+        if (peers.isEmpty()) {
+            appendSystem("No peers to send to.");
+            return;
+        }
+        for (String peer : peers) {
+            new Thread(() -> {
+                String[] p = peer.split(":");
+                try (Socket socket = new Socket()) {
+                    socket.connect(new InetSocketAddress(p[0], Integer.parseInt(p[1])), 3000);
+                    PrintWriter writer = new PrintWriter(socket.getOutputStream(), true);
+                    writer.println(msg);
+                } catch (Exception e) {
+                    SwingUtilities.invokeLater(() ->
+                        appendSystem("Failed to send to " + peer + " (" + e.getMessage() + ")")
+                    );
+                }
+            }).start();
+        }
+    }
+
+    // ---------------- Server ----------------
+    private void startServer() {
+        new Thread(() -> {
+            try (ServerSocket server = new ServerSocket(port)) {
+                appendSystem("Server listening on " + host + ":" + port);
+                while (true) {
+                    Socket socket = server.accept();
+                    new Thread(() -> handleIncoming(socket)).start();
+                }
+            } catch (IOException e) {
+                appendSystem("Server error: " + e.getMessage());
+            }
+        }).start();
+    }
+
+    private void handleIncoming(Socket socket) {
+        try (BufferedReader reader = new BufferedReader(new InputStreamReader(socket.getInputStream()))) {
+            String msg = reader.readLine();
+            if (msg != null) {
+                SwingUtilities.invokeLater(() -> chatArea.append("📥 " + msg + "\n"));
+            }
+        } catch (IOException e) {
+            SwingUtilities.invokeLater(() -> appendSystem("Error receiving message: " + e.getMessage()));
+        }
+    }
+
+    // ---------------- Main ----------------
+    public static void main(String[] args) {
+        String host = JOptionPane.showInputDialog(null, "Enter your host (e.g. 127.0.0.1):");
+        String portStr = JOptionPane.showInputDialog(null, "Enter port (e.g. 5000):");
+        if (host == null || portStr == null) return;
+        int port;
+        try {
+            port = Integer.parseInt(portStr.trim());
+        } catch (NumberFormatException e) {
+            JOptionPane.showMessageDialog(null, "Invalid port.");
+            return;
+        }
+        SwingUtilities.invokeLater(() -> new P2PChatUI(host.trim(), port));
+    }
 }
